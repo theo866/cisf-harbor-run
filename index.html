@@ -138,6 +138,43 @@ button:focus-visible { outline: 3px solid var(--foam); outline-offset: 3px; }
 .result b { display: block; font-family: var(--display); font-weight: 400; font-size: 1.7rem; margin-top: 2px; }
 .result .new span { color: var(--brass); }
 .small { font-size: .85rem; }
+.secondary {
+  font: 700 1rem var(--body);
+  background: transparent; color: var(--foam);
+  border: 2px solid rgba(238, 247, 245, .32); border-radius: 12px;
+  padding: 11px 16px; cursor: pointer;
+}
+.overlay, .board-scroll { touch-action: pan-y; }
+.post { display: flex; flex-direction: column; gap: 8px; }
+.post label { font-weight: 700; font-size: .7rem; letter-spacing: .14em; text-transform: uppercase; color: var(--mist); }
+.post .row { display: flex; gap: 8px; }
+.post input {
+  flex: 1; min-width: 0;
+  font: 16px var(--body); color: var(--foam);
+  background: rgba(255, 255, 255, .08);
+  border: 2px solid rgba(238, 247, 245, .25); border-radius: 10px;
+  padding: 10px 12px;
+  -webkit-user-select: text; user-select: text;
+}
+.post input::placeholder { color: rgba(196, 216, 224, .6); }
+.post input:focus { outline: none; border-color: var(--brass); }
+.post-btn {
+  font: 700 .95rem var(--body);
+  background: var(--foam); color: var(--navy);
+  border: 0; border-radius: 10px; padding: 0 14px; cursor: pointer;
+}
+.post-btn:disabled { opacity: .6; cursor: default; }
+.post-msg.error { color: #ff9f8a !important; }
+.board-scroll { max-height: min(50vh, 440px); overflow-y: auto; margin-inline: -6px; padding-inline: 6px; }
+.board { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; font-variant-numeric: tabular-nums; }
+.board li { display: grid; grid-template-columns: 2.6rem 1fr auto; gap: 8px; align-items: center; padding: 7px 10px; border-radius: 8px; }
+.board li:nth-child(odd) { background: rgba(255, 255, 255, .05); }
+.board .rank { color: var(--mist); font-weight: 700; }
+.board .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.board .pts { font-family: var(--display); }
+.board li.me { background: var(--brass); color: var(--navy); }
+.board li.me .rank { color: var(--navy); }
+.board li.gap { display: block; background: none; padding: 0; text-align: center; color: var(--mist); }
 </style>
 
 <canvas id="bay" aria-label="Top-down view of the harbor with your sailboat"></canvas>
@@ -170,7 +207,18 @@ button:focus-visible { outline: 3px solid var(--foam); outline-offset: 3px; }
       <li><svg viewBox="0 0 28 28" aria-hidden="true"><circle cx="14" cy="14" r="11" fill="none" stroke="#f1c232" stroke-width="2"/><path d="M10 7v14" stroke="#eef7f5" stroke-width="2"/><path d="M11 7.5 20 10.5 11 13.5z" fill="#d8432c"/></svg><span>Grab burgees for 50 bonus points</span></li>
     </ul>
     <button class="go" id="startBtn">Cast off</button>
+    <button class="secondary" id="boardBtn">Leaderboard</button>
     <p class="small" id="bestTitle" hidden></p>
+  </div>
+</div>
+
+<div class="overlay" id="boardView" hidden>
+  <div class="card">
+    <p class="eyebrow">Everyone's top runs</p>
+    <h2>Leaderboard</h2>
+    <p class="small" id="boardMsg">Loading scores…</p>
+    <div class="board-scroll"><ol class="board" id="boardList"></ol></div>
+    <button class="go" id="boardBack">Back</button>
   </div>
 </div>
 
@@ -184,6 +232,15 @@ button:focus-visible { outline: 3px solid var(--foam); outline-offset: 3px; }
       <div id="bestBox"><span id="bestLabel">Best</span><b id="overBest">0</b></div>
     </div>
     <p class="small" id="overLog"></p>
+    <form class="post" id="postForm" novalidate>
+      <label for="nameInput">Post to the leaderboard</label>
+      <div class="row" id="postRow">
+        <input id="nameInput" name="name" maxlength="16" autocomplete="nickname" autocapitalize="words" enterkeyhint="send" placeholder="Your name">
+        <button class="post-btn" id="postBtn" type="submit">Post score</button>
+      </div>
+      <p class="small post-msg" id="postMsg" hidden></p>
+    </form>
+    <div class="board-scroll" id="overBoardWrap" hidden><ol class="board" id="overBoard"></ol></div>
     <button class="go" id="againBtn">Sail again</button>
   </div>
 </div>
@@ -364,9 +421,103 @@ button:focus-visible { outline: 3px solid var(--foam); outline-offset: 3px; }
     $('bestBox').classList.toggle('new', isNew);
     const nm = (S.dist / 1852).toFixed(2);
     $('overLog').textContent = `${nm} nm sailed · ${S.flags} burgee${S.flags === 1 ? '' : 's'} · top speed ${S.topKts} kts`;
+    lastRun = { score: sc, seconds: Math.max(1, Math.round(S.t)) };
+    posted = false;
+    $('postRow').hidden = false;
+    $('postBtn').disabled = false;
+    $('postBtn').textContent = 'Post score';
+    $('postMsg').hidden = true;
+    $('overBoardWrap').hidden = true;
+    if (!$('nameInput').value) $('nameInput').value = loadName();
     hud.hidden = true;
     overCard.hidden = false;
     $('againBtn').focus({ preventScroll: true });
+  }
+
+  // ---------- leaderboard ----------
+  const API = '/api/scores';
+  const NAME_KEY = 'cisf-harbor-run-name';
+  const loadName = () => { try { return localStorage.getItem(NAME_KEY) || ''; } catch (e) { return ''; } };
+  const saveName = v => { try { localStorage.setItem(NAME_KEY, v); } catch (e) {} };
+  let lastRun = null, posted = false;
+
+  function boardRow(entry, mine) {
+    const li = document.createElement('li');
+    if (mine) li.className = 'me';
+    const rank = document.createElement('span'); rank.className = 'rank'; rank.textContent = entry.rank ? `#${entry.rank}` : '–';
+    const name = document.createElement('span'); name.className = 'name'; name.textContent = entry.name;
+    const pts = document.createElement('span'); pts.className = 'pts'; pts.textContent = entry.score.toLocaleString();
+    li.append(rank, name, pts);
+    return li;
+  }
+
+  // Shows the top entries, plus the player's own row underneath when it falls outside them.
+  function renderBoard(list, top, you) {
+    list.replaceChildren(...top.map(e => boardRow(e, you && e.id === you.id)));
+    if (you && !top.some(e => e.id === you.id)) {
+      const gap = document.createElement('li'); gap.className = 'gap'; gap.textContent = '⋯';
+      list.append(gap, boardRow(you, true));
+    }
+  }
+
+  function showPostMsg(text, isError) {
+    const m = $('postMsg');
+    m.textContent = text; m.hidden = false;
+    m.classList.toggle('error', !!isError);
+  }
+
+  async function postScore(e) {
+    e.preventDefault();
+    if (posted || !lastRun) return;
+    const name = $('nameInput').value.trim();
+    if (!name) { showPostMsg('Enter a name first.', true); $('nameInput').focus(); return; }
+    const btn = $('postBtn');
+    btn.disabled = true; btn.textContent = 'Posting…';
+    try {
+      const r = await fetch(API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, score: lastRun.score, seconds: lastRun.seconds })
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || "Couldn't post your score. Try again.");
+      posted = true;
+      saveName(name);
+      $('nameInput').blur();
+      $('postRow').hidden = true;
+      showPostMsg(d.rank ? `You're #${d.rank} of ${d.total.toLocaleString()}.` : `Posted. You're outside the top ${d.total.toLocaleString()}.`);
+      renderBoard($('overBoard'), d.top, { ...d.you, rank: d.rank });
+      $('overBoardWrap').hidden = false;
+    } catch (err) {
+      showPostMsg(err instanceof TypeError ? "Couldn't reach the leaderboard. Check your connection and try again." : err.message, true);
+      btn.disabled = false; btn.textContent = 'Post score';
+    }
+  }
+
+  async function openBoard() {
+    titleCard.hidden = true;
+    $('boardView').hidden = false;
+    const msg = $('boardMsg'), list = $('boardList');
+    msg.textContent = 'Loading scores…'; msg.hidden = false;
+    list.replaceChildren();
+    try {
+      const r = await fetch(`${API}?limit=50`, { cache: 'no-store' });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || "Couldn't load the leaderboard.");
+      if (!d.top.length) { msg.textContent = 'No scores yet. Finish a run and post yours to take first place.'; return; }
+      msg.textContent = d.top.length < d.total
+        ? `Top ${d.top.length} of ${d.total.toLocaleString()} posted runs`
+        : `${d.total.toLocaleString()} posted run${d.total === 1 ? '' : 's'}`;
+      renderBoard(list, d.top, null);
+    } catch (err) {
+      msg.textContent = err instanceof TypeError ? "Couldn't reach the leaderboard. Check your connection and try again." : err.message;
+    }
+    $('boardBack').focus({ preventScroll: true });
+  }
+
+  function closeBoard() {
+    $('boardView').hidden = true;
+    titleCard.hidden = false;
   }
 
   function pause() {
@@ -754,11 +905,13 @@ button:focus-visible { outline: 3px solid var(--foam); outline-offset: 3px; }
   cvs.addEventListener('pointercancel', () => { sx = null; });
 
   window.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT') return;
     const k = e.key;
     if (k === 'ArrowLeft' || k === 'a' || k === 'A') { steer(-1); e.preventDefault(); }
     else if (k === 'ArrowRight' || k === 'd' || k === 'D') { steer(1); e.preventDefault(); }
+    else if (k === 'Escape' && !$('boardView').hidden) closeBoard();
     else if (k === 'Escape' || k === 'p' || k === 'P') { S.mode === 'play' ? pause() : resume(); }
-    else if ((k === ' ' || k === 'Enter') && e.target.tagName !== 'BUTTON') {
+    else if ((k === ' ' || k === 'Enter') && e.target.tagName !== 'BUTTON' && $('boardView').hidden) {
       if (S.mode === 'title' || S.mode === 'over') start();
       else if (S.mode === 'paused') resume();
       e.preventDefault();
@@ -769,6 +922,9 @@ button:focus-visible { outline: 3px solid var(--foam); outline-offset: 3px; }
   $('againBtn').addEventListener('click', start);
   $('resumeBtn').addEventListener('click', resume);
   $('pauseBtn').addEventListener('click', pause);
+  $('postForm').addEventListener('submit', postScore);
+  $('boardBtn').addEventListener('click', openBoard);
+  $('boardBack').addEventListener('click', closeBoard);
   document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
   window.addEventListener('resize', () => { resize(); seedScenery(); });
 
