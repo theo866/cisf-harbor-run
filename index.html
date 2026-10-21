@@ -1,0 +1,769 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0b4259">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="description" content="Dodge lobster pots, rocks, marks, moorings and the ferry. A CISF sailing game.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b4259'/%3E%3Cpath d='M16 4v20' stroke='%23eef7f5' stroke-width='2'/%3E%3Cpath d='M17 5 26 22H17z' fill='%23eef7f5'/%3E%3Cpath d='M6 24h20l-3 4H9z' fill='%23d8432c'/%3E%3C/svg%3E">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}</style>
+</head>
+<body>
+<title>CISF Harbor Run</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Atkinson+Hyperlegible:wght@400;700&display=swap">
+<style>
+/* Layout: full-bleed top-down bay on canvas, HUD pinned to the top, signal-flag title card floating over the water */
+:root {
+  --sea: #13627c;
+  --sea-deep: #0b4259;
+  --foam: #eef7f5;
+  --mist: #c4d8e0;
+  --navy: #14264a;
+  --signal: #d8432c;
+  --brass: #f1c232;
+  --brass-dark: #b88f16;
+  --display: "Alfa Slab One", Rockwell, "Roboto Slab", Georgia, serif;
+  --body: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: dark;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--sea-deep);
+  color: var(--foam);
+  font-family: var(--body);
+  overscroll-behavior: none;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+#bay { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+
+.hud {
+  position: fixed; top: 0; left: 0; right: 0;
+  display: flex; justify-content: space-between; align-items: flex-start;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 12px);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}
+.score { font-family: var(--display); font-size: 2.4rem; line-height: 1; text-shadow: 0 2px 0 rgba(8, 30, 48, .4); }
+.score small {
+  display: block; margin-top: 4px;
+  font-family: var(--body); font-weight: 700; font-size: .7rem;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--mist);
+  text-shadow: none;
+}
+.stats { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.chip {
+  display: flex; align-items: center; gap: 6px;
+  background: rgba(20, 38, 74, .74); color: var(--foam);
+  border-radius: 999px; padding: 5px 11px;
+  font-weight: 700; font-size: .85rem;
+}
+.chip svg { width: 14px; height: 14px; }
+.chip em { font-style: normal; font-weight: 400; color: var(--mist); }
+.pause {
+  pointer-events: auto;
+  width: 40px; height: 40px; border-radius: 50%;
+  border: 0; background: rgba(20, 38, 74, .74); color: var(--foam);
+  display: grid; place-items: center; cursor: pointer;
+}
+
+.overlay {
+  position: fixed; inset: 0;
+  display: grid; place-items: center;
+  padding-block: calc(env(safe-area-inset-top, 0px) + 20px) calc(env(safe-area-inset-bottom, 0px) + 20px);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  background: rgba(6, 30, 44, .38);
+  overflow-y: auto;
+}
+.card {
+  width: min(100%, 360px);
+  box-sizing: border-box;
+  display: flex; flex-direction: column; gap: 14px;
+  background: var(--navy); color: var(--foam);
+  border-radius: 18px;
+  padding: 24px 22px 22px;
+  box-shadow: 0 20px 44px rgba(0, 0, 0, .38);
+}
+.flags { display: flex; gap: 8px; }
+.flags figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.flags svg { width: 40px; height: 28px; display: block; border-radius: 2px; box-shadow: 0 0 0 1px rgba(255, 255, 255, .18); }
+.flags figcaption { font-weight: 700; font-size: .7rem; letter-spacing: .14em; color: var(--mist); }
+h1, h2 { font-family: var(--display); font-weight: 400; margin: 0; text-wrap: balance; line-height: 1; }
+h1 { font-size: 2.6rem; }
+h1 span { color: var(--brass); }
+h2 { font-size: 1.7rem; }
+.card p { margin: 0; line-height: 1.45; color: var(--mist); }
+.eyebrow { font-weight: 700; font-size: .72rem; letter-spacing: .14em; text-transform: uppercase; color: var(--brass) !important; }
+.howto { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; font-size: .95rem; line-height: 1.35; }
+.howto li { display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: center; }
+.howto svg { width: 28px; height: 28px; }
+.go {
+  font: 1.2rem var(--display);
+  background: var(--brass); color: var(--navy);
+  border: 0; border-radius: 12px; padding: 14px 18px;
+  box-shadow: 0 4px 0 var(--brass-dark);
+  cursor: pointer;
+}
+.go:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--brass-dark); }
+button:focus-visible { outline: 3px solid var(--foam); outline-offset: 3px; }
+.result { display: flex; gap: 10px; font-variant-numeric: tabular-nums; }
+.result div { flex: 1; min-width: 0; background: rgba(255, 255, 255, .07); border-radius: 10px; padding: 10px 12px; }
+.result span { font-weight: 700; font-size: .7rem; letter-spacing: .14em; text-transform: uppercase; color: var(--mist); }
+.result b { display: block; font-family: var(--display); font-weight: 400; font-size: 1.7rem; margin-top: 2px; }
+.result .new span { color: var(--brass); }
+.small { font-size: .85rem; }
+</style>
+
+<canvas id="bay" aria-label="Top-down view of the harbor with your sailboat"></canvas>
+
+<div class="hud" id="hud" hidden>
+  <div class="score"><span id="score">0</span><small>Score</small></div>
+  <div class="stats">
+    <button class="pause" id="pauseBtn" aria-label="Pause">
+      <svg width="14" height="16" viewBox="0 0 14 16" aria-hidden="true"><rect x="1" y="1" width="4" height="14" rx="1" fill="currentColor"/><rect x="9" y="1" width="4" height="14" rx="1" fill="currentColor"/></svg>
+    </button>
+    <div class="chip"><svg viewBox="0 0 14 14" aria-hidden="true"><path d="M3 1v12" stroke="#eef7f5" stroke-width="1.6"/><path d="M3.8 1.5 12.5 4.5 3.8 7.5z" fill="#f1c232"/></svg><span id="flags">0</span></div>
+    <div class="chip"><span id="knots">4</span><em>kts</em></div>
+    <div class="chip"><span id="dist">0.00</span><em>nm</em></div>
+  </div>
+</div>
+
+<div class="overlay" id="title">
+  <div class="card">
+    <div class="flags" aria-label="Signal flags spelling C I S F">
+      <figure><svg viewBox="0 0 40 28" aria-hidden="true"><rect width="40" height="28" fill="#1d4fa3"/><rect y="5.6" width="40" height="5.6" fill="#fff"/><rect y="11.2" width="40" height="5.6" fill="#d8432c"/><rect y="16.8" width="40" height="5.6" fill="#fff"/></svg><figcaption>C</figcaption></figure>
+      <figure><svg viewBox="0 0 40 28" aria-hidden="true"><rect width="40" height="28" fill="#f1c232"/><circle cx="20" cy="14" r="8" fill="#111"/></svg><figcaption>I</figcaption></figure>
+      <figure><svg viewBox="0 0 40 28" aria-hidden="true"><rect width="40" height="28" fill="#fff"/><rect x="12" y="7" width="16" height="14" fill="#1d4fa3"/></svg><figcaption>S</figcaption></figure>
+      <figure><svg viewBox="0 0 40 28" aria-hidden="true"><rect width="40" height="28" fill="#fff"/><path d="M20 2 38 14 20 26 2 14z" fill="#d8432c"/></svg><figcaption>F</figcaption></figure>
+    </div>
+    <h1>Harbor <span>Run</span></h1>
+    <p>Sail as far as you can. One hit and your race is over.</p>
+    <ul class="howto">
+      <li><svg viewBox="0 0 28 28" aria-hidden="true"><path d="M4 14h20M4 14l5-5M4 14l5 5M24 14l-5-5M24 14l-5 5" stroke="#eef7f5" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Swipe, or tap the left or right side, to change lanes</span></li>
+      <li><svg viewBox="0 0 28 28" aria-hidden="true"><circle cx="14" cy="14" r="9" fill="#d8432c"/><circle cx="14" cy="14" r="5" fill="#f1c232"/><circle cx="14" cy="14" r="2" fill="#1d2430"/></svg><span>Dodge lobster pots, rocks, marks, moorings and the ferry</span></li>
+      <li><svg viewBox="0 0 28 28" aria-hidden="true"><circle cx="14" cy="14" r="11" fill="none" stroke="#f1c232" stroke-width="2"/><path d="M10 7v14" stroke="#eef7f5" stroke-width="2"/><path d="M11 7.5 20 10.5 11 13.5z" fill="#d8432c"/></svg><span>Grab burgees for 50 bonus points</span></li>
+    </ul>
+    <button class="go" id="startBtn">Cast off</button>
+    <p class="small" id="bestTitle" hidden></p>
+  </div>
+</div>
+
+<div class="overlay" id="over" hidden>
+  <div class="card">
+    <p class="eyebrow">Race over</p>
+    <h2 id="overTitle">Snagged a lobster pot</h2>
+    <p id="overSub">Line wrapped around the rudder.</p>
+    <div class="result">
+      <div><span>Score</span><b id="overScore">0</b></div>
+      <div id="bestBox"><span id="bestLabel">Best</span><b id="overBest">0</b></div>
+    </div>
+    <p class="small" id="overLog"></p>
+    <button class="go" id="againBtn">Sail again</button>
+  </div>
+</div>
+
+<div class="overlay" id="pause" hidden>
+  <div class="card">
+    <p class="eyebrow">Hove to</p>
+    <h2>Paused</h2>
+    <button class="go" id="resumeBtn">Resume</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  const cvs = document.getElementById('bay');
+  const ctx = cvs.getContext('2d');
+  const $ = id => document.getElementById(id);
+  const hud = $('hud'), titleCard = $('title'), overCard = $('over'), pauseCard = $('pause');
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const C = {
+    navy: '#14264a', foam: '#eef7f5', signal: '#d8432c', brass: '#f1c232',
+    sand: '#dcc79c', grass: '#4f8a4b', rock: '#5f5d57', rockHi: '#86827a', green: '#2f8f5b'
+  };
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const pick = a => a[Math.floor(Math.random() * a.length)];
+  const BEST_KEY = 'cisf-harbor-run-best';
+  const loadBest = () => { try { return +localStorage.getItem(BEST_KEY) || 0; } catch (e) { return 0; } };
+  const saveBest = v => { try { localStorage.setItem(BEST_KEY, String(v)); } catch (e) {} };
+
+  // ---------- layout ----------
+  let W = 0, H = 0, shore = 0, laneW = 0, unit = 0, boatY = 0;
+  const laneX = i => shore + laneW * (i + 0.5);
+
+  const boat = { lane: 1, x: 0, tilt: 0, spin: 0 };
+  const S = {
+    mode: 'title', clock: 0, t: 0, prog: 0, speed: 0, scroll: 0, dist: 0, flags: 0, topKts: 4,
+    obs: [], picks: [], wake: [], fx: [], nextSpawn: 0, prevFree: [0, 1, 2],
+    lastGap: 0, lastHH: 0, shake: 0, crashT: 0, reason: 'pot', wakeT: 0
+  };
+
+  function resize() {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    W = window.innerWidth; H = window.innerHeight;
+    cvs.width = Math.round(W * dpr); cvs.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const field = Math.min(W - 2 * Math.max(20, W * 0.07), 460);
+    shore = (W - field) / 2;
+    laneW = field / 3;
+    unit = Math.min(laneW, H * 0.15);
+    boatY = H * 0.78;
+    boat.x = laneX(boat.lane);
+  }
+
+  // ---------- scenery ----------
+  let ripples = [], pebbles = [];
+  function seedScenery() {
+    ripples = Array.from({ length: 55 }, () => ({ fx: Math.random(), y: Math.random() * H, len: rand(6, 18), ph: rand(0, 6) }));
+    pebbles = Array.from({ length: 40 }, (_, i) => ({
+      side: i % 2, fx: Math.random(), y: Math.random() * H, r: rand(1.5, 4),
+      c: pick(['#b8a47c', '#a39577', '#cdb88d', '#8f8a7c'])
+    }));
+  }
+
+  // ---------- spawning ----------
+  function makeObs(lane, y) {
+    const r = Math.random();
+    const type = r < 0.4 ? 'pot' : r < 0.62 ? 'rock' : r < 0.82 ? 'mark' : 'moored';
+    const o = { type, lane, y: y + rand(-0.2, 0.2) * unit, t: rand(0, 6), dx: 0, seed: rand(0, 6) };
+    if (type === 'pot') {
+      o.hw = o.hh = unit * 0.14; o.dx = rand(-0.12, 0.12);
+      o.cols = pick([['#f1c232', '#d8432c'], ['#ff8a3d', '#ffffff'], ['#3ec7a8', '#14264a'], ['#ffffff', '#2e7dd7']]);
+    } else if (type === 'rock') {
+      o.hw = o.hh = unit * 0.24;
+      o.pts = Array.from({ length: 8 }, () => rand(0.74, 1.05));
+    } else if (type === 'mark') {
+      o.hw = o.hh = unit * 0.16;
+      o.red = Math.random() < 0.5;
+      o.num = o.red ? pick(['2', '4', '6', '8']) : pick(['1', '3', '5', '7']);
+    } else {
+      o.hw = unit * 0.15; o.hh = unit * 0.42;
+      o.cover = pick(['#2e7dd7', '#14264a', '#3a8f6a', '#8a3b3b']);
+    }
+    return o;
+  }
+
+  function addFlags(lane, y, maxDown) {
+    let n = 1 + Math.floor(Math.random() * 3);
+    n = Math.min(n, Math.floor(maxDown / (unit * 0.8)));
+    for (let k = 1; k <= n; k++) S.picks.push({ lane, y: y + k * unit * 0.8, t: rand(0, 6) });
+  }
+
+  // Free lanes must be one move away from every lane that was free in the row before.
+  const reach = f => S.prevFree.every(q => Math.abs(q - f) <= 1);
+
+  function spawnRow() {
+    const p = S.prog, y = -unit * 3;
+    const gap = Math.max(unit * 2.7, H * (0.5 - 0.1 * p));
+    const maxDown = S.lastGap - S.lastHH - unit * 0.45;
+
+    if (S.t > 10 && Math.random() < 0.1 + 0.08 * p) {
+      const opts = [0, 2].filter(reach);
+      if (opts.length) {
+        const f = pick(opts);
+        S.obs.push({
+          type: 'ferry', lane: f === 0 ? 1 : 0, y, t: 0, dx: 0,
+          hw: laneW * 0.84, hh: unit * 0.82,
+          cars: Array.from({ length: 9 }, () => pick(['#d8432c', '#f1c232', '#eef7f5', '#2e7dd7', '#3a3f4a', '#7fb0c9']))
+        });
+        S.prevFree = [f];
+        if (Math.random() < 0.7) addFlags(f, y, maxDown);
+        S.lastGap = gap + unit * 1.4; S.lastHH = unit * 0.85;
+        return S.lastGap;
+      }
+    }
+
+    let free;
+    if (Math.random() < 0.22 + 0.5 * p) free = [pick([0, 1, 2].filter(reach))];
+    else { const b = Math.floor(Math.random() * 3); free = [0, 1, 2].filter(l => l !== b); }
+
+    let hh = 0;
+    for (let l = 0; l < 3; l++) {
+      if (free.includes(l)) continue;
+      const o = makeObs(l, y);
+      S.obs.push(o);
+      hh = Math.max(hh, o.hh + unit * 0.2);
+    }
+    if (Math.random() < 0.55) addFlags(pick(free), y, maxDown);
+    S.prevFree = free;
+    S.lastGap = gap; S.lastHH = hh;
+    return gap;
+  }
+
+  // ---------- game flow ----------
+  function start() {
+    Object.assign(S, {
+      mode: 'play', t: 0, prog: 0, dist: 0, flags: 0, topKts: 4, obs: [], picks: [], fx: [],
+      nextSpawn: H * 0.55, prevFree: [0, 1, 2], lastGap: H, lastHH: 0, shake: 0, crashT: 0
+    });
+    S.speed = H * 0.42;
+    boat.lane = 1; boat.spin = 0;
+    titleCard.hidden = true; overCard.hidden = true; pauseCard.hidden = true;
+    hud.hidden = false;
+    renderHud(true);
+  }
+
+  const score = () => Math.floor(S.dist) + S.flags * 50;
+
+  const REASONS = {
+    pot: ['Snagged a lobster pot', 'The pot warp wrapped around your rudder.'],
+    rock: ['Found the rocks', 'They were on the chart the whole time.'],
+    moored: ['Hit a moored boat', 'Expect a call from the owner.'],
+    mark: ['Hit the mark', 'That is a penalty turn.'],
+    ferry: ['Lost to the ferry', 'Tonnage has right of way. Always.']
+  };
+
+  function crash(o) {
+    S.mode = 'crash'; S.crashT = 0; S.shake = 1; S.reason = o.type;
+    for (let i = 0; i < 18; i++) {
+      const a = rand(0, Math.PI * 2), v = rand(40, 160);
+      S.fx.push({ kind: 'spray', x: boat.x, y: boatY - unit * 0.2, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: rand(0.4, 0.8), max: 0.8, r: rand(2, 4.5) });
+    }
+    try { navigator.vibrate && navigator.vibrate([40, 30, 90]); } catch (e) {}
+  }
+
+  function showOver() {
+    S.mode = 'over';
+    const sc = score();
+    let best = loadBest();
+    const isNew = sc > best;
+    if (isNew) { best = sc; saveBest(sc); }
+    const [t, sub] = REASONS[S.reason] || REASONS.pot;
+    $('overTitle').textContent = t;
+    $('overSub').textContent = sub;
+    $('overScore').textContent = sc.toLocaleString();
+    $('overBest').textContent = best.toLocaleString();
+    $('bestLabel').textContent = isNew ? 'New best' : 'Best';
+    $('bestBox').classList.toggle('new', isNew);
+    const nm = (S.dist / 1852).toFixed(2);
+    $('overLog').textContent = `${nm} nm sailed · ${S.flags} burgee${S.flags === 1 ? '' : 's'} · top speed ${S.topKts} kts`;
+    hud.hidden = true;
+    overCard.hidden = false;
+    $('againBtn').focus({ preventScroll: true });
+  }
+
+  function pause() {
+    if (S.mode !== 'play') return;
+    S.mode = 'paused';
+    pauseCard.hidden = false;
+    $('resumeBtn').focus({ preventScroll: true });
+  }
+  function resume() {
+    if (S.mode !== 'paused') return;
+    pauseCard.hidden = true;
+    S.mode = 'play';
+    last = performance.now();
+  }
+
+  function steer(d) {
+    if (S.mode !== 'play') return;
+    boat.lane = Math.max(0, Math.min(2, boat.lane + d));
+  }
+
+  // ---------- HUD ----------
+  const hudEls = { score: $('score'), flags: $('flags'), knots: $('knots'), dist: $('dist') };
+  const hudLast = {};
+  function setHud(k, v) { if (hudLast[k] !== v) { hudLast[k] = v; hudEls[k].textContent = v; } }
+  function renderHud() {
+    const kts = Math.round(4 + 10 * S.prog);
+    S.topKts = Math.max(S.topKts, kts);
+    setHud('score', score().toLocaleString());
+    setHud('flags', String(S.flags));
+    setHud('knots', String(kts));
+    setHud('dist', (S.dist / 1852).toFixed(2));
+  }
+
+  // ---------- update ----------
+  const obsX = o => o.type === 'ferry' ? (laneX(o.lane) + laneX(o.lane + 1)) / 2 : laneX(o.lane) + o.dx * laneW;
+
+  function update(dt) {
+    if (S.mode === 'paused') return;
+    S.clock += dt;
+
+    if (S.mode === 'play') {
+      S.t += dt;
+      S.prog = Math.min(1, S.t / 100);
+      S.speed = H * (0.42 + 0.78 * S.prog);
+    } else if (S.mode === 'crash') {
+      S.speed *= Math.pow(0.05, dt);
+      S.crashT += dt;
+      if (S.crashT > 0.9) showOver();
+    } else {
+      const target = H * (S.mode === 'title' ? 0.24 : 0.12);
+      S.speed += (target - S.speed) * Math.min(1, dt * 2);
+    }
+    const dy = S.speed * dt;
+    S.scroll += dy;
+
+    if (S.mode === 'play') {
+      S.dist += dy / H * 40;
+      S.nextSpawn -= dy;
+      if (S.nextSpawn <= 0) S.nextSpawn += spawnRow();
+    }
+
+    // boat
+    const tx = laneX(boat.lane);
+    boat.x += (tx - boat.x) * (1 - Math.exp(-dt * 16));
+    boat.tilt = (tx - boat.x) / laneW * 0.7;
+    if (S.mode === 'crash') boat.spin += dt * 7 * Math.max(0, 1 - S.crashT);
+
+    // scenery
+    for (const r of ripples) { r.y += dy; if (r.y > H + 20) { r.y -= H + 40; r.fx = Math.random(); } }
+    for (const p of pebbles) { p.y += dy; if (p.y > H + 10) { p.y -= H + 20; p.fx = Math.random(); } }
+    for (const o of S.obs) { o.y += dy; o.t += dt; }
+    for (const p of S.picks) { p.y += dy; p.t += dt; }
+    S.obs = S.obs.filter(o => o.y < H + unit * 2.5);
+    S.picks = S.picks.filter(p => p.y < H + unit && !p.got);
+
+    // wake from the stern
+    S.wakeT -= dt;
+    if (S.wakeT <= 0 && S.mode !== 'over') {
+      S.wakeT = 0.04;
+      for (const side of [-1, 1]) {
+        S.wake.push({ x: boat.x + side * unit * 0.07, y: boatY + unit * 0.3, vx: side * rand(10, 22), r: 2, a: 0.55 });
+      }
+    }
+    for (const w of S.wake) { w.y += dy; w.x += w.vx * dt; w.r += dt * 12; w.a -= dt * 0.75; }
+    S.wake = S.wake.filter(w => w.a > 0);
+
+    for (const f of S.fx) {
+      f.life -= dt;
+      f.x += (f.vx || 0) * dt;
+      f.y += (f.vy || 0) * dt + (f.kind === 'spray' ? dy : 0);
+    }
+    S.fx = S.fx.filter(f => f.life > 0);
+    S.shake = Math.max(0, S.shake - dt * 2.5);
+
+    if (S.mode === 'play') {
+      const bhw = unit * 0.12, bhh = unit * 0.28;
+      for (const o of S.obs) {
+        if (Math.abs(boat.x - obsX(o)) < bhw + o.hw && Math.abs(boatY - o.y) < bhh + o.hh) { crash(o); break; }
+      }
+      for (const p of S.picks) {
+        if (Math.abs(boat.x - laneX(p.lane)) < laneW * 0.4 && Math.abs(boatY - p.y) < unit * 0.38) {
+          p.got = true; S.flags++;
+          S.fx.push({ kind: 'text', x: laneX(p.lane), y: p.y, vy: -70, life: 0.8, max: 0.8, text: '+50' });
+          for (let i = 0; i < 8; i++) {
+            const a = rand(0, Math.PI * 2);
+            S.fx.push({ kind: 'spark', x: laneX(p.lane), y: p.y, vx: Math.cos(a) * 90, vy: Math.sin(a) * 90, life: 0.45, max: 0.45, r: 3 });
+          }
+        }
+      }
+      renderHud();
+    }
+  }
+
+  // ---------- drawing helpers ----------
+  function circle(x, y, r) { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); }
+  function rrect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath();
+  }
+  function ring(x, y, r, a) {
+    ctx.strokeStyle = `rgba(238,247,245,${a})`; ctx.lineWidth = 2;
+    circle(x, y, r); ctx.stroke();
+  }
+  function shadow(x, y, rx, ry) {
+    ctx.fillStyle = 'rgba(4,28,42,.28)';
+    ctx.beginPath(); ctx.ellipse(x + 4, y + 6, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function drawShore() {
+    for (const side of [0, 1]) {
+      ctx.save();
+      if (side === 1) { ctx.translate(W, 0); ctx.scale(-1, 1); }
+      const edge = [];
+      for (let y = -24; y <= H + 24; y += 12) edge.push([shore + Math.sin((y - S.scroll) * 0.035 + side * 2.1) * 3, y]);
+      ctx.fillStyle = C.sand;
+      ctx.beginPath(); ctx.moveTo(-30, -24);
+      for (const [x, y] of edge) ctx.lineTo(x, y);
+      ctx.lineTo(-30, H + 24); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = 'rgba(238,247,245,.75)'; ctx.lineWidth = 3;
+      ctx.beginPath();
+      edge.forEach(([x, y], i) => i ? ctx.lineTo(x + 3, y) : ctx.moveTo(x + 3, y));
+      ctx.stroke();
+      ctx.fillStyle = C.grass;
+      ctx.beginPath(); ctx.moveTo(-30, -24);
+      for (let y = -24; y <= H + 24; y += 14) ctx.lineTo(shore * 0.36 + Math.sin((y - S.scroll) * 0.021 + side * 1.3) * shore * 0.12, y);
+      ctx.lineTo(-30, H + 24); ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+    for (const p of pebbles) {
+      const off = shore * (0.5 + p.fx * 0.4);
+      ctx.fillStyle = p.c;
+      circle(p.side ? W - off : off, p.y, p.r); ctx.fill();
+    }
+  }
+
+  function drawSailboat(x, y, rot, luff) {
+    const L = unit * 0.62, B = unit * 0.26;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+    shadow(0, 0, B * 0.6, L * 0.5);
+    // hull
+    ctx.beginPath();
+    ctx.moveTo(0, -L / 2);
+    ctx.bezierCurveTo(B * 0.58, -L * 0.34, B * 0.52, L * 0.12, B * 0.42, L / 2);
+    ctx.lineTo(-B * 0.42, L / 2);
+    ctx.bezierCurveTo(-B * 0.52, L * 0.12, -B * 0.58, -L * 0.34, 0, -L / 2);
+    ctx.fillStyle = C.signal; ctx.fill();
+    ctx.strokeStyle = C.navy; ctx.lineWidth = 1.5; ctx.stroke();
+    // deck
+    ctx.save(); ctx.translate(0, L * 0.03); ctx.scale(0.8, 0.88);
+    ctx.beginPath();
+    ctx.moveTo(0, -L / 2);
+    ctx.bezierCurveTo(B * 0.58, -L * 0.34, B * 0.52, L * 0.12, B * 0.42, L / 2);
+    ctx.lineTo(-B * 0.42, L / 2);
+    ctx.bezierCurveTo(-B * 0.52, L * 0.12, -B * 0.58, -L * 0.34, 0, -L / 2);
+    ctx.fillStyle = '#f5f1e6'; ctx.fill();
+    ctx.restore();
+    // cockpit
+    rrect(-B * 0.2, L * 0.1, B * 0.4, L * 0.3, 3); ctx.fillStyle = '#b98b55'; ctx.fill();
+    // sail: boom off to starboard with a belly to leeward
+    const mx = 0, my = -L * 0.14;
+    const bx = B * 1.0, by = L * 0.4;
+    const belly = B * (1.25 + (luff ? Math.sin(S.clock * 30) * 0.5 : Math.sin(S.clock * 3) * 0.06));
+    ctx.beginPath();
+    ctx.moveTo(mx, my);
+    ctx.lineTo(bx, by);
+    ctx.quadraticCurveTo(belly * 1.15, L * 0.02, mx, my);
+    ctx.fillStyle = '#fbfdfc'; ctx.fill();
+    ctx.strokeStyle = 'rgba(20,38,74,.55)'; ctx.lineWidth = 1.2; ctx.stroke();
+    ctx.strokeStyle = C.navy; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(mx, my); ctx.lineTo(bx, by); ctx.stroke();
+    // mast and burgee
+    ctx.fillStyle = C.navy; circle(mx, my, 2.6); ctx.fill();
+    ctx.fillStyle = C.brass;
+    ctx.beginPath(); ctx.moveTo(mx, my); ctx.lineTo(mx - B * 0.55, my + 3); ctx.lineTo(mx, my + 6); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawPot(o, x, y) {
+    const r = unit * 0.13;
+    ring(x, y, r * 1.8 + Math.sin(o.t * 2) * 2, 0.22);
+    shadow(x - 2, y - 3, r, r);
+    ctx.fillStyle = o.cols[0]; circle(x, y, r); ctx.fill();
+    ctx.strokeStyle = C.navy; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.fillStyle = o.cols[1]; circle(x, y, r * 0.58); ctx.fill();
+    ctx.fillStyle = '#1d2430'; circle(x, y, r * 0.2); ctx.fill();
+  }
+
+  function poly(x, y, pts, R, seed) {
+    ctx.beginPath();
+    pts.forEach((k, i) => {
+      const a = i / pts.length * Math.PI * 2 + seed;
+      const px = x + Math.cos(a) * k * R, py = y + Math.sin(a) * k * R;
+      i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+    });
+    ctx.closePath();
+  }
+  function drawRock(o, x, y) {
+    const R = unit * 0.3;
+    ctx.fillStyle = 'rgba(238,247,245,.32)';
+    poly(x, y, o.pts, R * (1.28 + Math.sin(o.t * 2.4) * 0.05), o.seed); ctx.fill();
+    ctx.fillStyle = C.rock; poly(x, y, o.pts, R, o.seed); ctx.fill();
+    ctx.fillStyle = C.rockHi; poly(x - R * 0.15, y - R * 0.18, o.pts, R * 0.58, o.seed); ctx.fill();
+  }
+
+  function drawMark(o, x, y) {
+    const r = unit * 0.16;
+    ring(x, y, r * 1.7 + Math.sin(o.t * 2) * 2, 0.25);
+    shadow(x - 2, y - 3, r, r);
+    if (o.red) {
+      ctx.fillStyle = C.signal; circle(x, y, r); ctx.fill();
+      ctx.fillStyle = '#ef6c51'; circle(x - r * 0.2, y - r * 0.2, r * 0.55); ctx.fill();
+    } else {
+      rrect(x - r, y - r, r * 2, r * 2, r * 0.3); ctx.fillStyle = C.green; ctx.fill();
+      rrect(x - r * 0.75, y - r * 0.75, r * 1.2, r * 1.2, r * 0.2); ctx.fillStyle = '#43aa71'; ctx.fill();
+    }
+    ctx.fillStyle = C.foam;
+    ctx.font = `bold ${Math.round(r * 1.1)}px "Atkinson Hyperlegible", system-ui, sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(o.num, x, y + 1);
+  }
+
+  function drawMoored(o, x, y) {
+    const L = unit * 0.82, B = unit * 0.28;
+    const ballY = y - L / 2 - unit * 0.16;
+    ctx.strokeStyle = 'rgba(238,247,245,.6)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, ballY); ctx.lineTo(x, y - L / 2); ctx.stroke();
+    ctx.fillStyle = '#ffffff'; circle(x, ballY, unit * 0.06); ctx.fill();
+    ctx.fillStyle = '#ff8a3d'; circle(x, ballY, unit * 0.03); ctx.fill();
+    shadow(x, y, B * 0.6, L * 0.5);
+    ctx.save(); ctx.translate(x, y);
+    ctx.beginPath();
+    ctx.moveTo(0, -L / 2);
+    ctx.bezierCurveTo(B * 0.5, -L * 0.36, B / 2, -L * 0.15, B / 2, -L * 0.05);
+    ctx.lineTo(B / 2, L / 2); ctx.lineTo(-B / 2, L / 2); ctx.lineTo(-B / 2, -L * 0.05);
+    ctx.bezierCurveTo(-B / 2, -L * 0.15, -B * 0.5, -L * 0.36, 0, -L / 2);
+    ctx.fillStyle = '#f7f8f6'; ctx.fill();
+    ctx.strokeStyle = '#8fa3ad'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.strokeStyle = '#26323d'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(-B * 0.36, -L * 0.08); ctx.quadraticCurveTo(0, -L * 0.16, B * 0.36, -L * 0.08); ctx.stroke();
+    rrect(-B * 0.36, -L * 0.02, B * 0.72, L * 0.4, 4); ctx.fillStyle = o.cover; ctx.fill();
+    rrect(-B * 0.16, L / 2 - 1, B * 0.32, unit * 0.07, 2); ctx.fillStyle = '#26323d'; ctx.fill();
+    ctx.restore();
+  }
+
+  function drawFerry(o, x, y) {
+    const Wd = laneW * 1.72, L = unit * 1.7;
+    // stern churn and wake
+    ctx.strokeStyle = 'rgba(238,247,245,.35)'; ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(x - Wd * 0.45, y + L / 2); ctx.lineTo(x - Wd * 0.75, y + L / 2 + unit * 1.2);
+    ctx.moveTo(x + Wd * 0.45, y + L / 2); ctx.lineTo(x + Wd * 0.75, y + L / 2 + unit * 1.2);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(238,247,245,.3)';
+    for (let i = 0; i < 5; i++) { circle(x + Math.sin(o.t * 5 + i * 1.7) * Wd * 0.3, y + L / 2 + 8 + i * 7, 7 + i * 1.5); ctx.fill(); }
+    shadow(x, y, Wd / 2, L / 2);
+    // hull
+    ctx.beginPath();
+    ctx.moveTo(x - Wd / 2, y + L / 2);
+    ctx.lineTo(x - Wd / 2, y - L * 0.22);
+    ctx.quadraticCurveTo(x - Wd / 2, y - L / 2, x, y - L / 2);
+    ctx.quadraticCurveTo(x + Wd / 2, y - L / 2, x + Wd / 2, y - L * 0.22);
+    ctx.lineTo(x + Wd / 2, y + L / 2);
+    ctx.closePath();
+    ctx.fillStyle = '#f4f6f4'; ctx.fill();
+    ctx.strokeStyle = C.navy; ctx.lineWidth = 2; ctx.stroke();
+    // car deck
+    const dw = Wd * 0.82, dt = y - L * 0.08, dh = L * 0.52;
+    rrect(x - dw / 2, dt, dw, dh, 4); ctx.fillStyle = '#c3ccd1'; ctx.fill();
+    const cw = dw / 3 - 8, ch = dh / 3 - 6;
+    o.cars.forEach((c, i) => {
+      const cx = x - dw / 2 + 4 + (i % 3) * (dw / 3), cy = dt + 3 + Math.floor(i / 3) * (dh / 3);
+      rrect(cx + 2, cy + 1, cw, ch, 3); ctx.fillStyle = c; ctx.fill();
+    });
+    // wheelhouse
+    rrect(x - Wd * 0.3, y - L * 0.36, Wd * 0.6, L * 0.22, 5); ctx.fillStyle = C.navy; ctx.fill();
+    ctx.fillStyle = '#7fb0c9'; ctx.fillRect(x - Wd * 0.26, y - L * 0.35, Wd * 0.52, L * 0.05);
+    // stern band
+    ctx.fillStyle = C.navy; ctx.fillRect(x - Wd / 2, y + L / 2 - L * 0.06, Wd, L * 0.06);
+  }
+
+  function drawFlag(p) {
+    const x = laneX(p.lane), y = p.y + Math.sin(p.t * 3) * 2;
+    const r = unit * 0.19, pulse = 1 + Math.sin(p.t * 5) * 0.08;
+    ctx.fillStyle = 'rgba(241,194,50,.22)'; circle(x, y, r * 1.35 * pulse); ctx.fill();
+    ctx.strokeStyle = C.brass; ctx.lineWidth = 2.5; circle(x, y, r * pulse); ctx.stroke();
+    const px = x - r * 0.35;
+    ctx.strokeStyle = C.foam; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(px, y + r * 0.6); ctx.lineTo(px, y - r * 0.62); ctx.stroke();
+    const flap = Math.sin(p.t * 8) * r * 0.08;
+    ctx.fillStyle = C.signal;
+    ctx.beginPath(); ctx.moveTo(px + 1, y - r * 0.6); ctx.lineTo(x + r * 0.6, y - r * 0.28 + flap); ctx.lineTo(px + 1, y + r * 0.02); ctx.closePath(); ctx.fill();
+  }
+
+  // ---------- draw ----------
+  function draw() {
+    ctx.save();
+    if (S.shake > 0 && !reduceMotion) ctx.translate(rand(-1, 1) * S.shake * 8, rand(-1, 1) * S.shake * 8);
+
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#0c4a63'); g.addColorStop(1, '#177593');
+    ctx.fillStyle = g; ctx.fillRect(-20, -20, W + 40, H + 40);
+
+    ctx.strokeStyle = 'rgba(238,247,245,.15)'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+    for (const r of ripples) {
+      const x = shore + r.fx * (W - 2 * shore), wob = Math.sin(S.clock * 2 + r.ph) * 2;
+      ctx.beginPath(); ctx.moveTo(x - r.len / 2, r.y + wob); ctx.quadraticCurveTo(x, r.y - 4 + wob, x + r.len / 2, r.y + wob); ctx.stroke();
+    }
+
+    for (const w of S.wake) { ctx.strokeStyle = `rgba(238,247,245,${w.a})`; ctx.lineWidth = 2; circle(w.x, w.y, w.r); ctx.stroke(); }
+
+    drawShore();
+
+    for (const p of S.picks) drawFlag(p);
+    for (const o of S.obs) {
+      const x = obsX(o);
+      if (o.type === 'pot') drawPot(o, x, o.y);
+      else if (o.type === 'rock') drawRock(o, x, o.y);
+      else if (o.type === 'mark') drawMark(o, x, o.y);
+      else if (o.type === 'moored') drawMoored(o, x, o.y);
+      else drawFerry(o, x, o.y);
+    }
+
+    drawSailboat(boat.x, boatY, boat.tilt + boat.spin, S.mode === 'crash' || S.mode === 'over');
+
+    for (const f of S.fx) {
+      const a = Math.max(0, f.life / f.max);
+      if (f.kind === 'text') {
+        ctx.fillStyle = `rgba(241,194,50,${a})`;
+        ctx.font = `${Math.round(unit * 0.24)}px "Alfa Slab One", Rockwell, Georgia, serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(f.text, f.x, f.y);
+      } else {
+        ctx.fillStyle = f.kind === 'spark' ? `rgba(241,194,50,${a})` : `rgba(238,247,245,${a})`;
+        circle(f.x, f.y, f.r); ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
+  // ---------- loop ----------
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    update(dt);
+    draw();
+    requestAnimationFrame(frame);
+  }
+
+  // ---------- input ----------
+  let sx = null, sy = 0, swiped = false;
+  cvs.addEventListener('pointerdown', e => { sx = e.clientX; sy = e.clientY; swiped = false; });
+  cvs.addEventListener('pointermove', e => {
+    if (sx === null || swiped) return;
+    const dx = e.clientX - sx, dy = e.clientY - sy;
+    if (Math.abs(dx) > 26 && Math.abs(dx) > Math.abs(dy)) { steer(Math.sign(dx)); swiped = true; }
+  });
+  cvs.addEventListener('pointerup', e => {
+    if (sx !== null && !swiped) steer(e.clientX < W / 2 ? -1 : 1);
+    sx = null;
+  });
+  cvs.addEventListener('pointercancel', () => { sx = null; });
+
+  window.addEventListener('keydown', e => {
+    const k = e.key;
+    if (k === 'ArrowLeft' || k === 'a' || k === 'A') { steer(-1); e.preventDefault(); }
+    else if (k === 'ArrowRight' || k === 'd' || k === 'D') { steer(1); e.preventDefault(); }
+    else if (k === 'Escape' || k === 'p' || k === 'P') { S.mode === 'play' ? pause() : resume(); }
+    else if ((k === ' ' || k === 'Enter') && e.target.tagName !== 'BUTTON') {
+      if (S.mode === 'title' || S.mode === 'over') start();
+      else if (S.mode === 'paused') resume();
+      e.preventDefault();
+    }
+  });
+
+  $('startBtn').addEventListener('click', start);
+  $('againBtn').addEventListener('click', start);
+  $('resumeBtn').addEventListener('click', resume);
+  $('pauseBtn').addEventListener('click', pause);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
+  window.addEventListener('resize', () => { resize(); seedScenery(); });
+
+  resize();
+  seedScenery();
+  const best = loadBest();
+  if (best > 0) { $('bestTitle').textContent = `Your best: ${best.toLocaleString()}`; $('bestTitle').hidden = false; }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
